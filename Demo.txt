@@ -1,0 +1,166 @@
+import sqlite3
+from datetime import datetime
+
+DB_NAME = "quiz_app.db"
+
+
+def connect_db():
+    """Open a connection to the local SQLite database."""
+    return sqlite3.connect(DB_NAME)
+
+
+def setup_database():
+    """Create required tables and add sample questions once."""
+    with connect_db() as connection:
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question TEXT NOT NULL,
+                option_a TEXT NOT NULL,
+                option_b TEXT NOT NULL,
+                option_c TEXT NOT NULL,
+                option_d TEXT NOT NULL,
+                correct_option TEXT NOT NULL
+                    CHECK (correct_option IN ('A', 'B', 'C', 'D'))
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_name TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                total_questions INTEGER NOT NULL,
+                attempted_at TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("SELECT COUNT(*) FROM questions")
+        question_count = cursor.fetchone()[0]
+
+        if question_count == 0:
+            sample_questions = [
+                ("Which language is this project written in?",
+                 "Java", "Python", "C", "HTML", "B"),
+                ("Which keyword defines a function in Python?",
+                 "func", "define", "def", "function", "C"),
+                ("Which type stores an ordered, changeable collection?",
+                 "list", "tuple", "int", "bool", "A"),
+                ("Which SQL command retrieves records?",
+                 "GET", "OPEN", "SELECT", "SHOWFILE", "C"),
+                ("Which module provides SQLite access in Python?",
+                 "sqlite3", "random", "turtle", "math", "A")
+            ]
+
+            cursor.executemany("""
+                INSERT INTO questions
+                (question, option_a, option_b, option_c, option_d,
+                 correct_option)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, sample_questions)
+
+
+
+
+def get_questions():
+    """Return all questions as dictionaries keyed by column name."""
+    with connect_db() as connection:
+        connection.row_factory = sqlite3.Row
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, question, option_a, option_b, option_c, option_d,
+                   correct_option
+            FROM questions
+            ORDER BY id
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_valid_answer():
+    """Keep asking until the user enters A, B, C, or D."""
+    while True:
+        answer = input("Your answer (A/B/C/D): ").strip().upper()
+        if answer in ("A", "B", "C", "D"):
+            return answer
+        print("Invalid choice. Please enter A, B, C, or D.")
+
+
+def save_result(player_name, score, total_questions):
+    """Save a completed quiz attempt in the results table."""
+    attempted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with connect_db() as connection:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO results
+            (player_name, score, total_questions, attempted_at)
+            VALUES (?, ?, ?, ?)
+        """, (player_name, score, total_questions, attempted_at))
+
+
+def calculate_percentage(score, total_questions):
+    """Return the score percentage; handle an empty question bank."""
+    if total_questions == 0:
+        return 0.0
+    return (score / total_questions) * 100
+
+
+
+def run_quiz():
+    setup_database()
+
+    print("\n===== PYTHON QUIZ APPLICATION =====")
+
+    player_name = input("Enter your name: ").strip()
+
+    if not player_name:
+        player_name = "Guest"
+
+    questions = get_questions()
+
+    if not questions:
+        print("No questions available.")
+        return
+
+    score = 0
+    total_questions = len(questions)
+
+    print("\nWelcome to the Python Quiz,", player_name)
+
+    for index, question in enumerate(questions, start=1):
+        print("\nQuestion", index, ":", question["question"])
+
+        print("A.", question["option_a"])
+        print("B.", question["option_b"])
+        print("C.", question["option_c"])
+        print("D.", question["option_d"])
+
+        answer = get_valid_answer()
+
+        if answer == question["correct_option"]:
+            print("Correct!")
+            score += 1
+        else:
+            print("Incorrect!")
+            print("Correct answer:", question["correct_option"])
+
+    percentage = calculate_percentage(score, total_questions)
+
+    print("\n===== QUIZ RESULT =====")
+    print("Name:", player_name)
+    print("Score:", score, "/", total_questions)
+    print("Percentage: {:.2f}%".format(percentage))
+
+    save_result(player_name, score, total_questions)
+
+    print("\nYour result has been saved successfully!")
+
+
+if __name__ == "__main__":
+    try:
+        run_quiz()
+    except sqlite3.Error as error:
+        print("Database error:", error)
+
